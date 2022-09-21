@@ -36,7 +36,7 @@ class Protein_Dataset(Dataset):
         return len(self.data_train_x)
     
     def __getitem__(self, item):
-        return self.data_train_x[item], self.data_train_y[item], self.label_train_x[item], self.label_train_y[item]
+        return self.data_train_x[item], self.data_train_y[item], item
      
 
 def init_weights(m):
@@ -96,7 +96,7 @@ class structured_embedding(nn.Module):
 
        
     
-    def forward(self, x, y, label_x, label_y):
+    def forward(self, x, y):
        
         h_x = self.encoder_x(x)
         h_y = self.encoder_y(y)

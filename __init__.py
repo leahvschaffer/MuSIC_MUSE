@@ -18,6 +18,14 @@ from .triplet_loss import batch_hard_triplet_loss, batch_all_triplet_loss, fract
 
 """ Model fitting and feature prediction of MUSE """
 
+def make_matrix_from_labels(labels):
+    M = np.zeros((len(labels), len(labels)))
+    for cluster in np.unique(labels):
+        genes_in_cluster = np.where(labels == cluster)[0]
+        for geneA in genes_in_cluster:
+            for geneB in genes_in_cluster:
+                M[geneA,geneB] = 1    
+    return M
 
 def muse_fit_predict(resultsdir, index, data_x,
                      data_y,
@@ -74,6 +82,12 @@ def muse_fit_predict(resultsdir, index, data_x,
     feature_dim_y = data_y.shape[1]
     n_sample = data_x.shape[0]
 
+    #make matrix if labels are passed in as a 1D array
+    if (len(label_x.shape) == 1) or (label_x.shape[1] == 1) :
+        label_x = make_matrix_from_labels(label_x)
+    if (len(label_y.shape) == 1) or (label_y.shape[1] == 1) :
+        label_y = make_matrix_from_labels(label_y)
+        
     model = structured_embedding(feature_dim_x, feature_dim_y, latent_dim, n_hidden).to(device)
     optimizer = optim.Adam(model.parameters(), lr=learn_rate)
     
@@ -86,14 +100,18 @@ def muse_fit_predict(resultsdir, index, data_x,
     train_loader = DataLoader(Protein_Dataset(data_x, data_y, label_x, label_y), batch_size=batch_size, shuffle=True)
     sourceFile = open('{}.txt'.format(resultsdir), 'w')
     
+    
     for epoch in range(n_epochs_init):
         
         model.train()
 
         # loop over all batches
-        for step, (batch_x_input, batch_y_input, batch_label_x_input, batch_label_y_input) in enumerate(train_loader):
+        for step, (batch_x_input, batch_y_input, batch_genes) in enumerate(train_loader):
             
-            latent, reconstruct_x, reconstruct_y, latent_x, latent_y = model(batch_x_input, batch_y_input, batch_label_x_input, batch_label_y_input)     
+            batch_label_x_input = label_x[batch_genes][:, batch_genes]
+            batch_label_y_input = label_y[batch_genes][:, batch_genes]
+
+            latent, reconstruct_x, reconstruct_y, latent_x, latent_y = model(batch_x_input, batch_y_input)     
             
             w_x = model.decoder_h_x.weight
             w_y = model.decoder_h_y.weight
@@ -120,9 +138,12 @@ def muse_fit_predict(resultsdir, index, data_x,
         model.train()
 
         # loop over all batches
-        for step, (batch_x_input, batch_y_input, batch_label_x_input, batch_label_y_input) in enumerate(train_loader):
+        for step, (batch_x_input, batch_y_input, batch_genes) in enumerate(train_loader):
             
-            latent, reconstruct_x, reconstruct_y, latent_x, latent_y = model(batch_x_input, batch_y_input, batch_label_x_input, batch_label_y_input)     
+            batch_label_x_input = label_x[batch_genes][:, batch_genes]
+            batch_label_y_input = label_y[batch_genes][:, batch_genes]
+            
+            latent, reconstruct_x, reconstruct_y, latent_x, latent_y = model(batch_x_input, batch_y_input)     
             
             w_x = model.decoder_h_x.weight
             w_y = model.decoder_h_y.weight
@@ -151,10 +172,14 @@ def muse_fit_predict(resultsdir, index, data_x,
             
     model.eval()
     with torch.no_grad():
-        latent, reconstruct_x, reconstruct_y, latent_x, latent_y = model(data_x, data_y, label_x, label_y)   
+        latent, reconstruct_x, reconstruct_y, latent_x, latent_y = model(data_x, data_y)   
 
     update_label_x, _, _ = phenograph.cluster(latent_x.detach().cpu().numpy(), k=k)
+    update_label_x = make_matrix_from_labels(update_label_x)
+    
     update_label_y, _, _ = phenograph.cluster(latent_y.detach().cpu().numpy(), k=k)
+    update_label_y = make_matrix_from_labels(update_label_y)
+    
     train_loader = DataLoader(Protein_Dataset(data_x, data_y, update_label_x, update_label_y), batch_size=batch_size, shuffle=True)
 
     # refine MUSE parameters with reference labels and triplet losses
@@ -179,9 +204,11 @@ def muse_fit_predict(resultsdir, index, data_x,
         fraction_easy_ys =[]
 
         # loop over all batches
-        for step, (batch_x_input, batch_y_input, batch_label_x_input, batch_label_y_input) in enumerate(train_loader):
+        for step, (batch_x_input, batch_y_input, batch_genes) in enumerate(train_loader):
             
-            latent, reconstruct_x, reconstruct_y, latent_x, latent_y = model(batch_x_input, batch_y_input, batch_label_x_input, batch_label_y_input)     
+            batch_label_x_input = label_x[batch_genes][:, batch_genes]
+            batch_label_y_input = label_y[batch_genes][:, batch_genes]
+            latent, reconstruct_x, reconstruct_y, latent_x, latent_y = model(batch_x_input, batch_y_input)     
             
             w_x = model.decoder_h_x.weight
             w_y = model.decoder_h_y.weight
@@ -240,11 +267,12 @@ def muse_fit_predict(resultsdir, index, data_x,
         if epoch%cluster_update_epoch == 0:
             model.eval()
             with torch.no_grad():
-                latent, reconstruct_x, reconstruct_y, latent_x, latent_y = model(data_x, data_y, label_x, label_y)   
+                latent, reconstruct_x, reconstruct_y, latent_x, latent_y = model(data_x, data_y)   
     
             update_label_x, _, _ = phenograph.cluster(latent_x.detach().cpu().numpy(), k=k)
-            update_label_y, _, _ = phenograph.cluster(latent_y.detach().cpu().numpy(), k=k)
-            
+
+            update_label_y, _, _ = phenograph.cluster(latent_y.detach().cpu().numpy(), k=k) 
+
             if save_update_epochs:
                 torch.save(model.state_dict(), '{}_{}.pth'.format(resultsdir, epoch))
                 pd.DataFrame(latent, index = index).to_csv('{}_latent_{}.txt'.format(resultsdir, epoch))
@@ -254,12 +282,15 @@ def muse_fit_predict(resultsdir, index, data_x,
                 pd.DataFrame(latent_y, index = index).to_csv('{}_latent_y_{}.txt'.format(resultsdir, epoch))
                 pd.DataFrame(update_label_x, index = index).to_csv('{}_label_x_{}.txt'.format(resultsdir, epoch))
                 pd.DataFrame(update_label_y, index = index).to_csv('{}_label_y_{}.txt'.format(resultsdir, epoch))
-                                               
+                        
+                    
+            update_label_x = make_matrix_from_labels(update_label_x)
+            update_label_y = make_matrix_from_labels(update_label_y)
             train_loader = DataLoader(Protein_Dataset(data_x, data_y, update_label_x, update_label_y), batch_size=batch_size, shuffle=True)
         
     model.eval()
     with torch.no_grad():
-        latent, reconstruct_x, reconstruct_y, latent_x, latent_y = model(data_x, data_y, label_x, label_y)
+        latent, reconstruct_x, reconstruct_y, latent_x, latent_y = model(data_x, data_y)
     
     torch.save(model.state_dict(), '{}.pth'.format(resultsdir))
     pd.DataFrame(latent, index = index).to_csv('{}_latent.txt'.format(resultsdir))

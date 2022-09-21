@@ -58,10 +58,9 @@ def _get_anchor_positive_triplet_mask(labels):
     indices_equal = torch.eye(labels.size()[0]).bool()
     indices_not_equal = torch.logical_not(indices_equal)
 
-    # Check if labels[i] == labels[j]
-    # Uses broadcasting where the 1st argument has shape (1, batch_size) and the 2nd (batch_size, 1)
-    labels_equal = torch.eq(torch.unsqueeze(labels, 0), torch.unsqueeze(labels, 1))
-
+    # Check if labels[i] == labels[j], should have a 1 in the mask matrix
+    labels_equal = labels > 0
+    
     # Combine the two masks
     mask = torch.logical_and(indices_not_equal, labels_equal)
 
@@ -77,8 +76,7 @@ def _get_anchor_negative_triplet_mask(labels):
     """
     # Check if labels[i] != labels[k]
     # Uses broadcasting where the 1st argument has shape (1, batch_size) and the 2nd (batch_size, 1)
-    labels_equal = torch.eq(torch.unsqueeze(labels, 0), torch.unsqueeze(labels, 1))
-
+    labels_equal = labels > 0
     mask = torch.logical_not(labels_equal)
 
     return mask
@@ -102,7 +100,7 @@ def _get_triplet_mask(labels):
     distinct_indices = torch.logical_and(torch.logical_and(i_not_equal_j, i_not_equal_k), j_not_equal_k)
 
     # Check if labels[i] == labels[j] and labels[i] != labels[k]
-    label_equal = torch.eq(torch.unsqueeze(labels, 0), torch.unsqueeze(labels, 1))
+    label_equal = labels > 0
     i_equal_j = torch.unsqueeze(label_equal, 2)
     i_equal_k = torch.unsqueeze(label_equal, 1)
 
