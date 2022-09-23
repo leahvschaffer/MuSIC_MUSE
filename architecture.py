@@ -25,19 +25,15 @@ class ToTensor:
               
     
 class Protein_Dataset(Dataset):
-    def __init__(self, data_train_x, data_train_y, label_train_x, label_train_y):
+    def __init__(self, data_train_x, data_train_y):
         self.data_train_x = data_train_x
         self.data_train_y = data_train_y
-        self.label_train_x = label_train_x
-        self.label_train_y = label_train_y
-
                 
     def __len__(self):
         return len(self.data_train_x)
     
     def __getitem__(self, item):
         return self.data_train_x[item], self.data_train_y[item], item
-     
 
 def init_weights(m):
     if type(m) == nn.Linear:
@@ -50,17 +46,18 @@ def init_weights_d(m):
         nn.init.normal_(m.weight.data)
             
 class structured_embedding(nn.Module):
-    def __init__(self, x_input_size, y_input_size, latent_dim, hidden_size):
+    def __init__(self, x_input_size, y_input_size, latent_dim, hidden_size, dropout):
         super().__init__()
-        
-        #encoder
+                
         self.encoder_x = nn.Sequential(
+            nn.Dropout(dropout),
             nn.Linear(x_input_size, hidden_size),
             nn.ELU(),
             nn.Linear(hidden_size, hidden_size),
             nn.Tanh())
     
         self.encoder_y = nn.Sequential(
+            nn.Dropout(dropout),
             nn.Linear(y_input_size, hidden_size),
             nn.ELU(),
             nn.Linear(hidden_size, hidden_size),
@@ -86,6 +83,7 @@ class structured_embedding(nn.Module):
             nn.Tanh(),
             nn.Linear(hidden_size, y_input_size))
        
+        # initialize weights
         self.encoder_x.apply(init_weights)
         self.encoder_y.apply(init_weights)
         self.encoder_z.apply(init_weights)
@@ -97,9 +95,10 @@ class structured_embedding(nn.Module):
        
     
     def forward(self, x, y):
-       
+        
         h_x = self.encoder_x(x)
         h_y = self.encoder_y(y)
+            
         h = torch.cat((h_x, h_y), 1)
         z = self.encoder_z(h)
         
