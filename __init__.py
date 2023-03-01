@@ -197,7 +197,7 @@ def muse_fit_predict(resultsdir, index, data_x,
         create_label_x = True
     else:
         if (len(label_x.shape) == 1) or (label_x.shape[1] == 1) :
-            label_x = tramsform(make_matrix_from_labels(label_x)).to(device)
+            label_x = transform(make_matrix_from_labels(label_x)).to(device)
         else:
             label_x = transform(label_x).to(device)
             
@@ -208,7 +208,7 @@ def muse_fit_predict(resultsdir, index, data_x,
         create_label_y = True
     else:
         if (len(label_y.shape) == 1) or (label_y.shape[1] == 1) :
-            label_y = tramsform(make_matrix_from_labels(label_y)).to(device)
+            label_y = transform(make_matrix_from_labels(label_y)).to(device)
         else:
             label_y = transform(label_y).to(device)
             
