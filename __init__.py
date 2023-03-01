@@ -20,7 +20,7 @@ from .triplet_loss import *
 #globals
 sourceFile = ''
 lambda_regul = 0
-triplet_margin = 0.0
+min_diff = 0.0
 hard_loss = False
 squared = False
 triplet_margin = 0.2
@@ -127,7 +127,7 @@ def muse_fit_predict(resultsdir, index, data_x,
                      latent_dim=100,
                      n_epochs=500,
                      lambda_regul=5,
-                     lambda_super=5, min_diff=0.2, hard_loss=False, squared=False, batch_norm=False, l2_norm = False, save_update_epochs=False, semi=False, k=30):
+                     lambda_super=5, min_diff=0.2, hard_loss=False, squared=False, batch_norm=False, l2_norm = False, save_update_epochs=False, semi=False, k=30, dropout=0.25):
     """
         MUSE model fitting and predicting:
           This function is used to train the MUSE model on multi-modality data
@@ -174,7 +174,7 @@ def muse_fit_predict(resultsdir, index, data_x,
     # set globals  (same across all training)
     globals()['sourceFile'] = sourceFile
     globals()['lambda_regul'] = lambda_regul
-    globals()['triplet_margin'] = min_diff
+    globals()['min_diff'] = min_diff
     globals()['hard_loss'] = hard_loss
     globals()['squared'] = squared
     globals()['device'] = device
@@ -196,17 +196,23 @@ def muse_fit_predict(resultsdir, index, data_x,
         label_x = transform(make_matrix_from_labels(label_x)).to(device)
         create_label_x = True
     else:
-        label_x = transform(label_x).to(device)
-    
+        if (len(label_x.shape) == 1) or (label_x.shape[1] == 1) :
+            label_x = tramsform(make_matrix_from_labels(label_x)).to(device)
+        else:
+            label_x = transform(label_x).to(device)
+            
     create_label_y = False
     if len(label_y) == 0 :
         label_y, _, _ = phenograph.cluster(data_y.detach().cpu().numpy(), k=k)
         label_y = transform(make_matrix_from_labels(label_y)).to(device)
         create_label_y = True
     else:
-        label_y = transform(label_y).to(device)
+        if (len(label_y.shape) == 1) or (label_y.shape[1] == 1) :
+            label_y = tramsform(make_matrix_from_labels(label_y)).to(device)
+        else:
+            label_y = transform(label_y).to(device)
+            
     # create model, optimizer, trainloader 
-    dropout = 0.25
         
     model = structured_embedding(feature_dim_x, feature_dim_y, latent_dim, n_hidden, dropout, batch_norm, l2_norm).to(device)
     optimizer = optim.Adam(model.parameters(), lr=learn_rate)
@@ -270,3 +276,5 @@ def muse_fit_predict(resultsdir, index, data_x,
     pd.DataFrame(reconstruct_y.detach().cpu().numpy(), index = index).to_csv('{}_reconstruct_y.txt'.format(resultsdir))
     pd.DataFrame(latent_x.detach().cpu().numpy(), index = index).to_csv('{}_latent_x.txt'.format(resultsdir))
     pd.DataFrame(latent_y.detach().cpu().numpy(), index = index).to_csv('{}_latent_y.txt'.format(resultsdir))
+    
+    return model
