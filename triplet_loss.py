@@ -6,76 +6,16 @@ CONVERTED TO PYTORCH LVS
 import torch
 import torch.nn as nn
 
-
-def _pairwise_distances(embeddings, device, squared=False):
+def _pairwise_distances(embeddings, device):
     """Compute the 2D matrix of distances between all the embeddings.
     Args:
         embeddings: tensor of shape (batch_size, embed_dim)
-        squared: Boolean. If true, output is the pairwise squared euclidean distance matrix.
-                 If false, output is the pairwise euclidean distance matrix.
     Returns:
         pairwise_distances: tensor of shape (batch_size, batch_size)
     """
-    # Get the dot product between all embeddings
-    # shape (batch_size, batch_size)
-    dot_product = torch.matmul(embeddings, torch.transpose(embeddings, 0, 1))
-
-    # Get squared L2 norm for each embedding. We can just take the diagonal of `dot_product`.
-    # This also provides more numerical stability (the diagonal of the result will be exactly 0).
-    # shape (batch_size,)
-    square_norm = torch.diagonal(dot_product)
-
-    # Compute the pairwise distance matrix as we have:
-    # ||a - b||^2 = ||a||^2  - 2 <a, b> + ||b||^2
-    # shape (batch_size, batch_size)
-    distances = torch.unsqueeze(square_norm, 1) - 2.0 * dot_product + torch.unsqueeze(square_norm, 0)
-
-    # Because of computation errors, some distances might be negative so we put everything >= 0.0
-    distances = torch.maximum(distances, torch.zeros(distances.size()).to(device))
-
-    if not squared:
-        # Because the gradient of sqrt is infinite when distances == 0.0 (ex: on the diagonal)
-        # we need to add a small epsilon where distances == 0.0
-        mask = torch.eq(distances, torch.zeros(distances.size()).to(device)).float()
-        distances = distances + mask * 1e-16
-
-        distances = torch.sqrt(distances)
-
-        # Correct the epsilon added: set the distances on the mask to be exactly 0.0
-        distances = distances * (1.0 - mask)
+    distances = 1 - torch.nn.functional.cosine_similarity(embeddings[:,:,None], embeddings.t()[None,:,:])
 
     return distances
-
-# def _pairwise_distances(embeddings, squared=False):
-#     """Compute the 2D matrix of distances between all the embeddings.
-#     Args:
-#         embeddings: tensor of shape (batch_size, embed_dim)
-#         squared: Boolean. If true, output is the pairwise squared euclidean distance matrix.
-#                  If false, output is the pairwise euclidean distance matrix.
-#     Returns:
-#         pairwise_distances: tensor of shape (batch_size, batch_size)
-#     """
-#     distances = 1 - torch.nn.functional.cosine_similarity(embeddings[:,:,None], embeddings.t()[None,:,:])
-
-#     return distances
-
-# def arcosh(x):
-#     return torch.log(x + torch.sqrt(x**2 - 1))
-
-# def _pairwise_distances(u, squared=False):
-#     EPS=0.001
-#     uu = u.norm(dim=1)**2
-#     vv = u.norm(dim=1)**2
-#     uv = u.mm(u.t())
-#     alpha = 1-uu
-#     alpha = alpha.clamp(min=EPS)
-#     beta = 1-vv
-#     beta = beta.clamp(min=EPS)
-    
-#     gamma = 1 + 2 * (uu - 2 * uv + vv) / (alpha * beta)
-#     gamma = gamma.clamp(min=1+EPS)
-#     return arcosh(gamma)
-
 
 def _get_triplet_mask(labels, device):
     """Return a 3D mask where mask[a, p, n] is True iff the triplet (a, p, n) is valid.
@@ -107,21 +47,19 @@ def _get_triplet_mask(labels, device):
     return mask
 
 
-def batch_all_triplet_loss(labels, embeddings, margin, device, squared=False):
+def batch_all_triplet_loss(labels, embeddings, margin, device):
     """Build the triplet loss over a batch of embeddings.
     We generate all the valid triplets and average the loss over the positive ones.
     Args:
         labels: labels of the batch, of size (batch_size,)
         embeddings: tensor of shape (batch_size, embed_dim)
         margin: margin for triplet loss
-        squared: Boolean. If true, output is the pairwise squared euclidean distance matrix.
-                 If false, output is the pairwise euclidean distance matrix.
+    
     Returns:
         triplet_loss: scalar tensor containing the triplet loss
     """
     # Get the pairwise distance matrix
-    pairwise_dist = _pairwise_distances(embeddings, device, squared=squared)
-
+    pairwise_dist = _pairwise_distances(embeddings, device)
     # shape (batch_size, batch_size, 1)
     anchor_positive_dist = torch.unsqueeze(pairwise_dist, 2)
     assert anchor_positive_dist.size()[2] == 1, "{}".format(anchor_positive_dist.size())
@@ -156,9 +94,9 @@ def batch_all_triplet_loss(labels, embeddings, margin, device, squared=False):
     return triplet_loss, fraction_positive_triplets
 
 
-def fraction_triplets(labels, embeddings, margin, device, squared=False):
+def fraction_triplets(labels, embeddings, margin, device):
     # Get the pairwise distance matrix
-    pairwise_dist = _pairwise_distances(embeddings, device, squared=squared)
+    pairwise_dist = _pairwise_distances(embeddings, device)
 
     # shape (batch_size, batch_size, 1)
     anchor_positive_dist = torch.unsqueeze(pairwise_dist, 2)
@@ -195,20 +133,18 @@ def fraction_triplets(labels, embeddings, margin, device, squared=False):
     return fraction_easy_triplets, fraction_semi_hard_triplets, fraction_hard_triplets
 
 
-def batch_hard_triplet_loss(labels, embeddings, margin, semi, device, squared=False):
+def batch_hard_triplet_loss(labels, embeddings, margin, device):
     """Build the triplet loss over a batch of embeddings.
     For each anchor, we get the hardest positive and hardest negative to form a triplet.
     Args:
         labels: labels of the batch, of size (batch_size,)
         embeddings: tensor of shape (batch_size, embed_dim)
         margin: margin for triplet loss
-        squared: Boolean. If true, output is the pairwise squared euclidean distance matrix.
-                 If false, output is the pairwise euclidean distance matrix.
     Returns:
         triplet_loss: scalar tensor containing the triplet loss
     """
     # Get the pairwise distance matrix
-    pairwise_dist = _pairwise_distances(embeddings, device, squared=squared)
+    pairwise_dist = _pairwise_distances(embeddings, device)
 
     # shape (batch_size, batch_size, 1)
     anchor_positive_dist = torch.unsqueeze(pairwise_dist, 2)
@@ -231,20 +167,9 @@ def batch_hard_triplet_loss(labels, embeddings, margin, semi, device, squared=Fa
 
     # Remove negative losses (i.e. the easy triplets)
     triplet_loss[triplet_loss < 0] = 0
-    # Remove very hard losses (negative is) 
-    if semi:
-        triplet_loss[triplet_loss > margin] = 0
-        #accounts for case where all triplets are hard- dont want to include then. 
-        #mask[triplet_loss > margin] = 0
-    
+
     # max per anchor
     maxes = torch.amax(triplet_loss,dim=(1,2))
     triplet_loss = torch.mean(maxes[mask.sum(dim=(1,2)) > 0]) 
-    
-    #max per anchor-positive
-#     maxes = triplet_loss[mask.sum(dim=(2)) > 0].max(dim=1)[0]
-#     triplet_loss = torch.mean(maxes)
-#     if len(maxes) == 0:
-#         return 0 
-    
+
     return triplet_loss

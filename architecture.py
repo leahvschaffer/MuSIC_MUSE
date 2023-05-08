@@ -6,7 +6,6 @@ import pandas as pd
 import math
 import torch.nn as nn
 import torch.optim as optim
-from tqdm.notebook import tqdm
 import matplotlib.pyplot as plt
 from torchvision import transforms
 from torch.utils.data import DataLoader, Dataset
@@ -46,29 +45,35 @@ def init_weights_d(m):
         nn.init.normal_(m.weight.data)
             
 class structured_embedding(nn.Module):
-    def __init__(self, x_input_size, y_input_size, latent_dim, hidden_size, dropout, batch_norm, l2_norm):
+    def __init__(self, x_input_size, y_input_size, latent_dim, hidden_size, dropout, l2_norm):
         super().__init__()
                 
-        self.batch_norm = batch_norm 
         self.l2_norm = l2_norm
         
         self.encoder_x = nn.Sequential(
             nn.Dropout(dropout),
             nn.Linear(x_input_size, hidden_size),
+            nn.BatchNorm1d(hidden_size),
             nn.ELU(),
+            nn.Dropout(dropout),
             nn.Linear(hidden_size, hidden_size),
+            nn.BatchNorm1d(hidden_size),
             nn.Tanh())
     
         self.encoder_y = nn.Sequential(
             nn.Dropout(dropout),
             nn.Linear(y_input_size, hidden_size),
+            nn.BatchNorm1d(hidden_size),
             nn.ELU(),
+            nn.Dropout(dropout),
             nn.Linear(hidden_size, hidden_size),
+            nn.BatchNorm1d(hidden_size),
             nn.Tanh())
         
         self.encoder_z = nn.Sequential(
-            nn.Linear(hidden_size + hidden_size, latent_dim))
-         #   nn.BatchNorm1d(latent_dim))
+            nn.Dropout(dropout),
+            nn.Linear(hidden_size + hidden_size, latent_dim),
+            nn.BatchNorm1d(latent_dim))
         
         self.decoder_h_x = nn.Linear(latent_dim, latent_dim, bias=False)
         self.decoder_h_y = nn.Linear(latent_dim, latent_dim, bias=False)
@@ -95,9 +100,7 @@ class structured_embedding(nn.Module):
         self.decoder_h_y.apply(init_weights_d)
         self.decoder_x.apply(init_weights)
         self.decoder_y.apply(init_weights)
-        
-        self.batchnorm = nn.BatchNorm1d(latent_dim)
-       
+               
     
     def forward(self, x, y):
         
@@ -108,8 +111,6 @@ class structured_embedding(nn.Module):
         z = self.encoder_z(h)
         
         #unit sphere
-        if self.batch_norm:
-            z = self.batchnorm(z)
         if self.l2_norm:
             z = nn.functional.normalize(z, p=2, dim=1)
 
